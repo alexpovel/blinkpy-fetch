@@ -18,7 +18,8 @@ from pathlib import Path
 
 from aiohttp import ClientSession
 from blinkpy.auth import Auth
-from blinkpy.blinkpy import Blink
+from blinkpy.blinkpy import Blink, BlinkSyncModule
+from sortedcontainers import SortedSet
 
 logging.basicConfig(level=logging.INFO)
 
@@ -71,15 +72,37 @@ async def main(target_dir: Path, since: datetime.date | None) -> None:
     async with ClientSession() as session:
         blink = await init(session=session)
 
+        my_sync: BlinkSyncModule = blink.sync[
+            blink.networks[list(blink.networks)[0]]["name"]
+        ]
+
         for name, camera in blink.cameras.items():
             logging.info(f"Found camera '{name}' with attributes: {camera.attributes}")
 
-        await blink.download_videos(
-            path=str(target_dir),
-            camera="all",
-            since=since.isoformat() if since else None,
-            delay=2,
-        )
+        my_sync._local_storage["manifest"] = SortedSet()
+        await my_sync.refresh()
+        if my_sync.local_storage and my_sync.local_storage_manifest_ready:
+            print("Manifest is ready")
+            print(f"Manifest {my_sync._local_storage['manifest']}")
+        else:
+            print("Manifest not ready")
+        for name, camera in blink.cameras.items():
+            print(f"{camera.name} status: {blink.cameras[name].arm}")
+        new_vid = await my_sync.check_new_videos()
+        print(f"New videos?: {new_vid}")
+
+        path = "Videos"
+        manifest = my_sync._local_storage["manifest"]
+        for item in reversed(manifest):
+            await item.prepare_download(blink)
+            print(f"{item}")
+            await item.download_video( 
+		blink, 
+		f"{path}/{item.name.replace(' ','_')}_{item.created_at.astimezone().isoformat().replace(':','_')}.mp4",
+	    )
+            await item.delete_video(blink)
+            await asyncio.sleep(2)
+        await session.close()
 
 
 if __name__ == "__main__":
