@@ -96,8 +96,11 @@ async def main(target_dir: Path, since: datetime.date | None) -> None:
         for item in reversed(manifest):
             await item.prepare_download(blink)
             print(f"{item}")
-            await item.download_video( blink, f"{path}/{item.name}_{item.created_at.astimezone().isoformat().replace(':','_')}.mp4",)
-#            await item.delete_video(blink)
+            await item.download_video( 
+		blink, 
+		f"{path}/{item.name.replace(' ','_')}_{item.created_at.astimezone().isoformat().replace(':','_')}.mp4",
+	    )
+            await item.delete_video(blink)
             await asyncio.sleep(2)
         await session.close()
 
