@@ -69,40 +69,41 @@ async def init(session: ClientSession) -> Blink:
 
 
 async def main(target_dir: Path, since: datetime.date | None) -> None:
+    if not target_dir.exists():
+        target_dir.mkdir(parents=True)
+
     async with ClientSession() as session:
         blink = await init(session=session)
+
+        for name, camera in blink.cameras.items():
+            logging.info(f"Found camera '{name}' with attributes: {camera.attributes}")
+            logging.info(f"{camera.name} status: {blink.cameras[name].arm}")
 
         my_sync: BlinkSyncModule = blink.sync[
             blink.networks[list(blink.networks)[0]]["name"]
         ]
 
-        for name, camera in blink.cameras.items():
-            logging.info(f"Found camera '{name}' with attributes: {camera.attributes}")
-
         my_sync._local_storage["manifest"] = SortedSet()
         await my_sync.refresh()
-        if my_sync.local_storage and my_sync.local_storage_manifest_ready:
-            print("Manifest is ready")
-            print(f"Manifest {my_sync._local_storage['manifest']}")
-        else:
-            print("Manifest not ready")
-        for name, camera in blink.cameras.items():
-            print(f"{camera.name} status: {blink.cameras[name].arm}")
-        new_vid = await my_sync.check_new_videos()
-        print(f"New videos?: {new_vid}")
 
-        path = "Videos"
+        if my_sync.local_storage and my_sync.local_storage_manifest_ready:
+            logging.info(f"Manifest is ready: {my_sync._local_storage['manifest']}")
+        else:
+            logging.info("Manifest not ready")
+
+        new_videos_available = await my_sync.check_new_videos()
+        logging.info(f"{new_videos_available=}")
+
         manifest = my_sync._local_storage["manifest"]
         for item in reversed(manifest):
             await item.prepare_download(blink)
-            print(f"{item}")
-            await item.download_video( 
-		blink, 
-		f"{path}/{item.name.replace(' ','_')}_{item.created_at.astimezone().isoformat().replace(':','_')}.mp4",
-	    )
+            logging.info(f"Manifest {item=}")
+            await item.download_video(
+                blink,
+                f"{target_dir}/{item.name.replace(' ', '_')}_{item.created_at.astimezone().isoformat().replace(':', '_')}.mp4",
+            )
             await item.delete_video(blink)
             await asyncio.sleep(2)
-        await session.close()
 
 
 if __name__ == "__main__":
